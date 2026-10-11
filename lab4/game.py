@@ -1,3 +1,4 @@
+import math
 import random
 from collections import deque
 
@@ -8,31 +9,61 @@ WIDTH, HEIGHT = COLS * TILE, ROWS * TILE + 36
 DIRS = {pygame.K_UP: (-1, 0), pygame.K_DOWN: (1, 0), pygame.K_LEFT: (0, -1), pygame.K_RIGHT: (0, 1)}
 MOVE_DELAY, ENEMY_DELAY, PUMP_RANGE, DEFLATE_AFTER = 0.11, 0.35, 3, 1.5
 
-
+DIRT_BANDS = (
+    (1, 3, (196, 152, 92)),    # topsoil: sandy tan
+    (4, 6, (176, 106, 48)),    # clay: orange-brown
+    (7, 9, (128, 60, 80)),     # deep rock: maroon
+    (10, 13, (70, 85, 130)),   # bedrock: slate blue
+)
 def dirt_color(row):
-    """
-    Return an RGB color based on underground depth.
+    """Return an (r, g, b) colour for dirt in the given row, or None for the default gradient."""
+    for first, last, color in DIRT_BANDS:
+        if first <= row <= last:
+            return color
+    return None
 
-    Shallower rows use lighter, warmer colors.
-    Deeper rows use darker colors.
-    Return None for rows that should use the default gradient.
-    """
-    if row < 0:
-        return None
+PARTICLES = []  # every live particle; updated and drawn once per frame
+MAX_PARTICLES = 400
+BURST_COLORS = ((255, 90, 60), (255, 160, 40), (255, 230, 90), (255, 255, 255))
 
-    if row < 5:
-        return (194, 154, 108)  # Light sandy brown
-    elif row < 10:
-        return (170, 125, 82)   # Medium brown
-    elif row < 15:
-        return (143, 96, 62)    # Dark brown
-    else:
-        return (112, 72, 49)    # Deep underground brown
+
+class Particle:
+    def __init__(self, x, y, vx, vy, life, color, size):
+        self.x, self.y, self.vx, self.vy = x, y, vx, vy
+        self.life = self.max_life = life
+        self.color, self.size = color, size
+
+    def update(self, dt):
+        self.x += self.vx * dt
+        self.y += self.vy * dt
+        self.vy += 220 * dt  # small gravity so the burst arcs downward
+        self.life -= dt
+
+    def draw(self, screen):
+        radius = max(1, round(self.size * self.life / self.max_life))  # shrinks as it fades
+        pygame.draw.circle(screen, self.color, (round(self.x), round(self.y)), radius)
+
+
+def update_particles(dt):
+    for particle in PARTICLES:
+        particle.update(dt)
+    PARTICLES[:] = [p for p in PARTICLES if p.life > 0]  # drop expired particles
+
+
+def draw_particles(screen):
+    for particle in PARTICLES:
+        particle.draw(screen)
+
 
 def on_enemy_popped(enemy, score):
     """Called when an enemy is popped; add particles, bonus points, or a colour flash here."""
-    pass
-
+    x, y = enemy.cell[1] * TILE + TILE // 2, enemy.cell[0] * TILE + TILE // 2
+    for _ in range(26):
+        angle, speed = random.uniform(0, 2 * math.pi), random.uniform(60, 200)
+        PARTICLES.append(Particle(
+            x, y, math.cos(angle) * speed, math.sin(angle) * speed,
+            random.uniform(0.4, 0.9), random.choice(BURST_COLORS), random.randint(3, 6)))
+    del PARTICLES[:-MAX_PARTICLES]  # keep only the newest, so many pops can never pile up
 
 def enemy_speed_multiplier(level):
     """Return a speed multiplier for enemies at the given level, or None for the default speed."""
@@ -83,6 +114,7 @@ class Game:
         self.reset()
 
     def reset(self):
+        PARTICLES.clear()
         self.level, self.score, self.lives, self.state = 1, 0, 3, "play"
         self.start_level()
 
@@ -170,6 +202,7 @@ class Game:
             enemy.cell = path[0]
 
     def update(self, dt, keys):
+        update_particles(dt)
         if self.state != "play":
             return
         self.time += dt
@@ -207,6 +240,7 @@ class Game:
             pygame.draw.circle(screen, color, (x, y), radius)
             pygame.draw.circle(screen, (255, 255, 255), (x - 4, y - 3), 3)
             pygame.draw.circle(screen, (255, 255, 255), (x + 4, y - 3), 3)
+        draw_particles(screen)
         px, py = self.player[1] * TILE + TILE // 2, self.player[0] * TILE + TILE // 2
         pygame.draw.circle(screen, (250, 250, 250), (px, py), 12)
         pygame.draw.rect(screen, (60, 120, 230), (px - 8, py - 12, 16, 8))
