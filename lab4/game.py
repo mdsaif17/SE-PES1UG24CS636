@@ -31,7 +31,7 @@ def in_bounds(r, c):
 def bfs_path(grid, start, goal):
     queue, parents = deque([start]), {start: None}
     while queue:
-        cell = queue.pop()
+        cell = queue.popleft()
         if cell == goal:
             break
         for dr, dc in DIRS.values():
