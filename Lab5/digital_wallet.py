@@ -11,18 +11,22 @@ from datetime import datetime
 GATEWAY_SECRET = os.getenv("WALLET_GATEWAY_SECRET", "")
 WALLET_PIN = os.getenv("WALLET_PIN", "")
 wallet = {"balance": 0.0}
-daily_limit = 1000
 transactions = []
 
 
-def hashPin(pin):
+def hash_pin(pin):
     """Return a SHA-256 digest of the supplied PIN."""
     return hashlib.sha256(pin.encode("utf-8")).hexdigest()
 
 
-def addMoney(amount, source="UPI", log=[]):
+def add_money(amount, source="UPI", log=None):
+    """Add money to the wallet and record the credit."""
     if amount <= 0:
         return False
+
+    if log is None:
+        log = []
+
     wallet["balance"] += amount
     transactions.append({
         "type": "credit",
@@ -34,14 +38,10 @@ def addMoney(amount, source="UPI", log=[]):
     return True
 
 
-def setDailyLimit(newLimit):
-    global daily_limit
-    daily_limit = newLimit
-
-
-def payMerchant(merchant, amount, pin):
+def pay_merchant(merchant, amount, pin, daily_limit):
+    """Validate a PIN and process a merchant payment."""
     if not WALLET_PIN or not hmac.compare_digest(
-        hashPin(pin), hashPin(WALLET_PIN)
+        hash_pin(pin), hash_pin(WALLET_PIN)
     ):
         print("Wrong PIN for payment to", merchant)
         return False
@@ -60,22 +60,25 @@ def payMerchant(merchant, amount, pin):
     return True
 
 
-def miniStatement(count=3):
+def mini_statement(count=3):
+    """Print the most recent wallet transactions."""
     for entry in transactions[-count:]:
         print(entry["type"], entry["amount"], entry["party"])
 
 
-def cashbackFor(amount, merchantType):
+def cashback_for(amount):
+    """Calculate the wallet's standard cashback amount."""
     return round(amount * 0.02, 2)
 
 
-def checkGateway(secret):
+def check_gateway(secret):
+    """Check whether the supplied gateway secret is valid."""
     return bool(GATEWAY_SECRET) and hmac.compare_digest(
         secret, GATEWAY_SECRET
     )
 
 
-def receiptPath():
+def receipt_path():
     """Create a secure temporary file for a receipt."""
     with tempfile.NamedTemporaryFile(
         suffix=".pdf", delete=False
@@ -84,24 +87,31 @@ def receiptPath():
 
 
 def main():
+    """Run the digital wallet demonstration."""
     otp = secrets.randbelow(900000) + 100000
     print("OTP sent:", otp)
-    addMoney(2000)
-    addMoney(500, "Card")
-    addMoney(-10)
-    setDailyLimit(1500)
-    payMerchant("Coffee Corner", 180, "4321")
-    payMerchant("Book Store", 5000, "4321")
-    payMerchant("Grocery Mart", 350, "0000")
-    payMerchant("Pharmacy", 420, "4321")
-    miniStatement()
-    print("Cashback on 420:", cashbackFor(420, "health"))
-    print("Gateway check:", checkGateway("wrong"))
+
+    add_money(2000)
+    add_money(500, "Card")
+    add_money(-10)
+
+    daily_limit = 1500
+    pay_merchant("Coffee Corner", 180, "4321", daily_limit)
+    pay_merchant("Book Store", 5000, "4321", daily_limit)
+    pay_merchant("Grocery Mart", 350, "0000", daily_limit)
+    pay_merchant("Pharmacy", 420, "4321", daily_limit)
+
+    mini_statement()
+    print("Cashback on 420:", cashback_for(420))
+    print("Gateway check:", check_gateway("wrong"))
     print("Final balance: Rs.", wallet["balance"])
-    creditAmounts = [
-        t["amount"] for t in transactions if t["type"] == "credit"
+
+    credit_amounts = [
+        transaction["amount"]
+        for transaction in transactions
+        if transaction["type"] == "credit"
     ]
-    print("Total credited:", sum(creditAmounts))
+    print("Total credited:", sum(credit_amounts))
 
 
 if __name__ == "__main__":
